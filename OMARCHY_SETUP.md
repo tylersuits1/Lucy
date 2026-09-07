@@ -318,16 +318,30 @@ should exist.
 
 ### C2. Install the new Python dependencies
 
+This pulls in `chromadb` and `sentence-transformers` — the latter depends
+on `torch`, a much larger install than anything from Phase 1. Two things
+bite on a GPU-less Linux box like this one, so handle both up front rather
+than waiting for the plain install to fail:
+
+1. **PyPI's default `torch` wheel for Linux bundles ~1.5GB of NVIDIA CUDA
+   libraries** this machine can't use (no GPU). Install the CPU-only build
+   explicitly instead.
+2. **`/tmp` is a small RAM-backed tmpfs on most Arch/systemd systems**
+   (sized as a fraction of total RAM — on this machine's 7.7GiB that's only
+   a few GB), and `pip`'s temp download/build files land there by default.
+   A `torch`-sized install can blow through it and fail with `Disk quota
+   exceeded` even though the real disk has plenty of room. Point `TMPDIR`
+   at a real directory on disk to avoid it.
+
 ```bash
 cd ~/Lucy/backend
 source venv/bin/activate
-pip install -r requirements.txt
+mkdir -p ~/pip-tmp
+TMPDIR=~/pip-tmp pip install torch --index-url https://download.pytorch.org/whl/cpu
+TMPDIR=~/pip-tmp pip install -r requirements.txt
 ```
 
-This pulls in `chromadb` and `sentence-transformers` — the latter depends
-on `torch`, which is a much larger download than anything from Phase 1
-(roughly 500MB–2GB depending on the platform wheel it resolves to). Check
-free disk space first if the connection is slow:
+Check disk space if anything still looks tight:
 
 ```bash
 df -h /
