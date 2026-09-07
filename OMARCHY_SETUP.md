@@ -697,3 +697,118 @@ browser somewhere).
 **Not in scope for this pass:** restoring from backup is documented in
 `BACKUP_SETUP.md` but only needs running if something actually breaks —
 no need to test a full restore as part of this deploy pass.
+
+---
+
+# Lucy-Omarchy — Remote Health Check & Kill Switch
+
+**Goal of this pass:** three new commands, typed directly into the normal
+Lucy chat box like any message — no new UI:
+- **`/health`** — CPU/RAM/disk, whether Ollama is running, uptime, and a
+  link to a live `btop` view in your browser.
+- **`/kill`** — stops the Ollama service specifically (the actual RAM/CPU
+  hog per the Phase 2 findings — up to 7.1GiB on this machine), so you can
+  relieve pressure on the box without SSHing in. Everything else (the web
+  app, file storage) stays up.
+- **`/start`** — brings Ollama back so chat/uploads work again.
+
+These are handled entirely in the backend before anything reaches the LLM
+— typing `/kill` always does exactly one thing, deterministically. Not
+built on the model's judgment.
+
+**Security note worth reading before running this:** `/kill` and `/start`
+need the backend (running as an unprivileged user) to run
+`sudo systemctl stop/start ollama`. Part G below adds a **narrowly-scoped
+passwordless sudo rule** — literally just those two exact commands,
+nothing else — via a dedicated file in `/etc/sudoers.d/`, validated with
+`visudo -c` before trusting it. Read G4 before running it; don't broaden
+the scope beyond what's written there.
+
+Also: the `btop` web terminal (linked from `/health`) is more sensitive
+than everything else Lucy exposes — `btop` lets you interactively kill
+*any* process, not just Ollama, from within its UI. Unlike the rest of
+Lucy (which relies on the tailnet itself as the trust boundary), this one
+gets an actual login prompt. Pick a real password in G5, not something
+trivial.
+
+## Part G — Steps for Claude Code to execute (health/kill switch)
+
+### G1. Pull the code
+
+```bash
+cd ~/Lucy && git pull
+```
+
+Verify: `ls backend/app/system/` shows `health.py` and `control.py`.
+
+### G2. Install the new Python dependency
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Adds `psutil` — pure C extension, prebuilt wheel, no system packages
+needed.
+
+### G3. Install ttyd and btop
+
+```bash
+sudo pacman -S --needed --noconfirm ttyd btop
+```
+
+> **HUMAN ACTION REQUIRED:** sudo password. (Omarchy likely already has
+> `btop` — `--needed` skips it if so.)
+
+### G4. Add the scoped sudo rule for the kill switch
+
+```bash
+echo "$USER ALL=(root) NOPASSWD: /usr/bin/systemctl stop ollama, /usr/bin/systemctl start ollama" | sudo tee /etc/sudoers.d/lucy-service-control > /dev/null
+sudo chmod 440 /etc/sudoers.d/lucy-service-control
+sudo visudo -c
+```
+
+> **HUMAN ACTION REQUIRED:** sudo password. `visudo -c` validates the
+> syntax of *all* sudoers files afterward — if it reports a problem with
+> `lucy-service-control`, fix or delete that file before moving on. Don't
+> leave a broken sudoers file in place, and don't widen this rule beyond
+> the two exact commands shown — that's what keeps the kill switch from
+> becoming a general-purpose root shell.
+
+### G5. Choose credentials for the btop web terminal, then install it
+
+> **HUMAN ACTION REQUIRED:** pick a real username and password now — the
+> `/health` link will prompt for them every time.
+
+```bash
+cd ~/Lucy/deploy
+sed -e "s|__LUCY_USER__|$USER|g" -e "s|__TTYD_USER__|<pick a username>|g" -e "s|__TTYD_PASSWORD__|<pick a password>|g" lucy-btop.service | sudo tee /etc/systemd/system/lucy-btop.service > /dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now lucy-btop
+```
+
+### G6. Restart the backend
+
+```bash
+sudo systemctl restart lucy-backend
+```
+
+### G7. Test all three commands for real
+
+From the PWA on your phone (or `curl -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{"message": "/health"}'` here first if you want to check locally):
+
+- Send `/health` — expect CPU/RAM/disk/Ollama-status/uptime, plus a link
+  like `http://100.87.24.48:7681`. Open it, log in with the G5 credentials,
+  confirm you see live `btop`.
+- Send `/kill` — expect confirmation Ollama stopped. Ask a normal
+  question — it should fail (that's correct; Ollama's down on purpose).
+- Send `/start` — expect confirmation it's restarting. Wait a few seconds,
+  ask a normal question again — should work.
+
+### G8. Report back
+
+Tell the user:
+- Whether all three commands worked from the actual phone/PWA
+- Whether the btop link opened and the login prompt worked
+- Anything that deviated from this doc
