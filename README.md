@@ -4,9 +4,10 @@ Lucy is a self-hosted, local-first AI assistant for household use. It runs
 entirely on a home server, is reachable from mobile and any computer via a
 private network (Tailscale), answers questions using a RAG
 (retrieval-augmented generation) pipeline over family documents/notes, can
-ingest uploaded files and auto-organize them, and syncs with Google Drive as
-an intake/export point. No data leaves the local network except the Drive
-sync.
+ingest uploaded files and auto-organize them, and backs itself up to Google
+Drive. No data leaves the local network except that one-way backup — Drive
+is never an intake point, and the backup tool can only see files it created
+itself in Drive, nothing else in the account.
 
 ## Architecture
 
@@ -19,7 +20,7 @@ sync.
                         |                            |                          |
                         +----------- RAG query flow -+                          |
                                                                                  |
-                                            [Ingestion pipeline] <---sync---> [Google Drive]
+                                                                    [Local filesystem] --backup--> [Google Drive]
 ```
 
 - **Backend**: Python, FastAPI
@@ -27,9 +28,9 @@ sync.
 - **Vector DB**: Chroma, embedded (no separate server process)
 - **Canonical storage**: local filesystem, Markdown as the primary note
   format, plus a folder for original uploaded files (PDFs, images, docx, etc.)
-- **Google Drive**: OAuth2 + Drive API v3, used for intake (a "Lucy Inbox"
-  folder Drive users drop files into) and export (a "Lucy Exports" folder
-  Lucy writes human-readable copies to)
+- **Google Drive**: one-way daily backup via `rclone` (a systemd timer, not
+  a Python dependency), scoped to Drive's `drive.file` permission — see
+  `BACKUP_SETUP.md`
 - **Remote access**: Tailscale mesh network — no public exposure
 - **Frontend**: React/Next.js PWA (installable to iOS home screen), talks to
   the FastAPI backend over the Tailscale network
@@ -37,7 +38,7 @@ sync.
 ## Why these choices
 
 - **Ollama over cloud APIs**: keeps family data entirely local — nothing
-  leaves the network except explicit Drive sync. No per-token cost, no
+  leaves the network except the one-way Drive backup. No per-token cost, no
   dependency on a third party staying up or keeping pricing stable.
 - **Chroma over alternatives (Qdrant, Pinecone, etc.)**: embeds directly into
   the FastAPI process, so there's no separate database server to run and
@@ -50,17 +51,16 @@ sync.
 
 ## Project status
 
-Phases 1-5 (pull side) are built: core chat loop, the RAG pipeline, a PWA
-frontend reachable from any device over Tailscale (deployed and confirmed
-working on the Omarchy server, `lucy-omarchy`), file upload with LLM-based
+Phases 1-4 are built: core chat loop, the RAG pipeline, a PWA frontend
+reachable from any device over Tailscale (deployed and confirmed working on
+the Omarchy server, `lucy-omarchy`), and file upload with LLM-based
 auto-organization (`POST /upload` extracts text — PDF/docx/OCR — classifies
-it with Ollama, files it away, and makes it immediately searchable), and
-Google Drive inbox sync (`app/drive/`, polling a "Lucy Inbox" folder
-through that same pipeline) — code is in and unit-tested, but needs the
-manual Google Cloud setup in `GOOGLE_DRIVE_SETUP.md` before it can actually
-run against a real account. Drive's "push" side (writing notes back to a
-"Lucy Exports" folder) is deferred. See `Lucy(AI) About.md` for the full
-phased build plan.
+it with Ollama, files it away, and makes it immediately searchable). Phase
+5 (Google Drive backup) has a documented setup path (`BACKUP_SETUP.md`)
+using `rclone` rather than app code — a live OAuth app pulling from a
+shared Drive folder was scrapped as too large a privacy footprint; local
+data now backs up to Drive one-way instead. See `Lucy(AI) About.md` for the
+full phased build plan.
 
 ## Setup
 
