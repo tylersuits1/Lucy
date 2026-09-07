@@ -50,13 +50,16 @@ sync.
 
 ## Project status
 
-Phases 1-4 are built: core chat loop, the RAG pipeline, a PWA frontend
-reachable from any device over Tailscale (deployed and confirmed working on
-the Omarchy server, `lucy-omarchy`), and file upload with LLM-based
+Phases 1-5 (pull side) are built: core chat loop, the RAG pipeline, a PWA
+frontend reachable from any device over Tailscale (deployed and confirmed
+working on the Omarchy server, `lucy-omarchy`), file upload with LLM-based
 auto-organization (`POST /upload` extracts text — PDF/docx/OCR — classifies
-it with Ollama, files it away, and makes it immediately searchable). Up
-next: **Phase 5, Google Drive sync**, pulling files from a "Lucy Inbox"
-folder through the same pipeline. See `Lucy(AI) About.md` for the full
+it with Ollama, files it away, and makes it immediately searchable), and
+Google Drive inbox sync (`app/drive/`, polling a "Lucy Inbox" folder
+through that same pipeline) — code is in and unit-tested, but needs the
+manual Google Cloud setup in `GOOGLE_DRIVE_SETUP.md` before it can actually
+run against a real account. Drive's "push" side (writing notes back to a
+"Lucy Exports" folder) is deferred. See `Lucy(AI) About.md` for the full
 phased build plan.
 
 ## Setup
