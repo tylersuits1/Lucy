@@ -661,3 +661,110 @@ Tell the user:
 **Not in scope for this pass:** Google Drive sync (Phase 5) builds on
 this pipeline next — pulling files from a "Lucy Inbox" Drive folder
 through this same extract → classify → organize flow.
+
+---
+
+# Lucy-Omarchy Phase 5
+
+**Goal of this pass:** get Drive inbox sync running on `lucy-omarchy`
+itself, so files dropped in the "Lucy Inbox" Drive folder from any device
+get pulled in automatically — no manual upload needed.
+
+**Prerequisite (human-only, done elsewhere first):** `GOOGLE_DRIVE_SETUP.md`
+in the repo root must be completed before this — Google Cloud project,
+OAuth client, the two Drive folders, and their IDs in `.env`. That doc also
+covers running `scripts/drive_authorize.py`, which needs a real browser —
+it's normally run on the dev Mac, not here, since this box doesn't have an
+interactive desktop session most of the time.
+
+## Part F — Steps for Claude Code to execute (Drive sync)
+
+### F1. Pull the Phase 5 code
+
+```bash
+cd ~/Lucy && git pull
+```
+
+Verify: `ls backend/app/drive/` should show `auth.py` and `sync.py`;
+`ls backend/app/routers/` should include `drive.py`.
+
+### F2. Install the new Python dependencies
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Adds `google-auth`, `google-auth-oauthlib`, and `google-api-python-client`
+— all pure-Python, no system packages needed this time.
+
+### F3. Get the credentials and folder IDs onto this machine
+
+> **HUMAN ACTION REQUIRED:** these three things were produced on the dev
+> Mac by following `GOOGLE_DRIVE_SETUP.md` and can't be regenerated here
+> (the OAuth flow needs a browser this headless-most-of-the-time box
+> doesn't have open). Copy them over from the dev Mac, e.g.:
+> ```bash
+> scp ~/dev/Lucy/backend/secrets/client_secret.json tylersuits@100.87.24.48:~/Lucy/backend/secrets/
+> scp ~/dev/Lucy/backend/secrets/token.json tylersuits@100.87.24.48:~/Lucy/backend/secrets/
+> ```
+> (run this on the dev Mac, not on lucy-omarchy)
+> Also copy the two folder ID values from the dev Mac's `backend/.env`
+> into this machine's `backend/.env` — `DRIVE_INBOX_FOLDER_ID` and
+> `DRIVE_EXPORTS_FOLDER_ID`.
+
+Verify both secret files exist and `.env` has non-empty folder IDs:
+
+```bash
+ls -la ~/Lucy/backend/secrets/
+grep DRIVE_ ~/Lucy/backend/.env
+```
+
+### F4. Restart the backend
+
+```bash
+sudo systemctl restart lucy-backend
+```
+
+The Drive poll loop starts automatically on boot now that
+`DRIVE_INBOX_FOLDER_ID` is set — it polls every
+`DRIVE_POLL_INTERVAL_SECONDS` (default 300s / 5 min).
+
+### F5. Smoke-test manually first
+
+Don't wait for the poll loop — trigger a sync directly and check the
+response:
+
+```bash
+curl -s -X POST http://localhost:8000/drive/sync
+```
+
+- If the Inbox folder is empty: `{"processed": 0, "results": []}` — that's
+  fine, means everything's wired correctly.
+- If it 401s: the token isn't valid — re-check F3.
+- If it 502s: check `ollama list` — classification depends on Ollama same
+  as `/chat` and `/upload`.
+
+### F6. Real end-to-end test
+
+> **HUMAN ACTION REQUIRED:** from your phone or any device, add a file to
+> the "Lucy Inbox" folder in Google Drive. Wait up to one poll interval
+> (5 min by default), then ask Lucy about it in the PWA. Also check Drive
+> — the file should have moved into a "Processed" subfolder inside Lucy
+> Inbox (created automatically).
+
+If you don't want to wait for the poll interval, just re-run the `curl`
+from F5 to trigger it immediately.
+
+### F7. Report back
+
+Tell the user:
+- Whether the manual sync and the real Drive-drop test both worked
+- What ended up in the "Processed" folder and what category/summary it
+  got
+- Anything that deviated from this doc
+
+**Not in scope for this pass:** the "push" side (writing Lucy-generated
+notes to the "Lucy Exports" folder) — deferred per the project brief's own
+"pull-only first, push later" guidance. Not built yet.
