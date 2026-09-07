@@ -2,5 +2,10 @@ fastapi
 uvicorn[standard]
 pydantic-settings
 httpx
+python-multipart
 chromadb
 sentence-transformers
+pypdf
+python-docx
+pytesseract
+Pillow

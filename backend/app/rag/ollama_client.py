@@ -8,7 +8,7 @@ class OllamaError(RuntimeError):
     """Raised when the Ollama server can't be reached or returns an error."""
 
 
-async def chat(message: str, system: str | None = None) -> str:
+async def chat(message: str, system: str | None = None, format: str | None = None) -> str:
     """Send a single-turn chat message to the configured Ollama model and return its reply."""
     settings = get_settings()
     messages = []
@@ -21,6 +21,8 @@ async def chat(message: str, system: str | None = None) -> str:
         "messages": messages,
         "stream": False,
     }
+    if format:
+        payload["format"] = format
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:

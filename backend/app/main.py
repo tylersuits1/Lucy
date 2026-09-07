@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chat
+from app.routers import chat, upload
 
 app = FastAPI(title="Lucy", description="Self-hosted family AI assistant")
 
@@ -16,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
+app.include_router(upload.router)
 
 
 @app.get("/health")
