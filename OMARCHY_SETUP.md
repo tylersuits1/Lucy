@@ -552,3 +552,112 @@ Tell the user:
 later if you want one clean address instead of two ports — optional, not
 required for Phase 3 to be considered done. File upload/auto-organization
 and Drive sync are Phases 4 and 5.
+
+---
+
+# Lucy-Omarchy Phase 4
+
+**Goal of this pass:** deploy file upload + auto-organization. After this,
+attaching a file in the PWA (the new "+" button next to the message box)
+should extract its text, have Ollama classify it, file it into
+`data/files/<category>/`, write a companion note, and make it immediately
+answerable via chat.
+
+**Already true going into this:** Phases 1-3 done and running under
+systemd on `lucy-omarchy`.
+
+## Part E — Steps for Claude Code to execute (file upload)
+
+### E1. Pull the Phase 4 code
+
+```bash
+cd ~/Lucy && git pull
+```
+
+Verify: `ls backend/app/ingestion/` should show `extract.py`,
+`classify.py`, and `organize.py`; `ls backend/app/routers/` should include
+`upload.py`.
+
+### E2. Install Tesseract (system package, needed for image OCR)
+
+```bash
+tesseract --version || sudo pacman -S --needed --noconfirm tesseract tesseract-data-eng
+```
+
+> **HUMAN ACTION REQUIRED:** the `sudo` call needs the account password.
+
+This is a system package, not a Python one — `pip install` alone won't
+provide it. `pytesseract` (the Python wrapper) just shells out to this
+binary.
+
+### E3. Install the new Python dependencies
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Adds `python-multipart` (FastAPI needs it to parse file uploads),
+`pypdf`, `python-docx`, `pytesseract`, and `Pillow`. All pure-Python or
+already have prebuilt wheels — nothing like the Phase 2 torch/CUDA issue
+should come up here.
+
+### E4. Rebuild the frontend and restart both services
+
+The frontend needs rebuilding too — it now has the attach button:
+
+```bash
+cd ~/Lucy/frontend
+npm run build
+sudo systemctl restart lucy-backend lucy-frontend
+```
+
+### E5. Smoke-test the upload pipeline
+
+```bash
+echo "The water heater warranty runs through 2027." > /tmp/test-upload.txt
+curl -s -X POST http://localhost:8000/upload -F "file=@/tmp/test-upload.txt"
+```
+
+Expect a JSON response with `category`, `filename`, `tags`, `summary`,
+and `chunks_ingested` (should be ≥ 1) — not a 502. If it 502s, check that
+Ollama is still running (`ollama list`) before anything else; the
+classification step depends on it just like `/chat` does.
+
+Then confirm it's actually answerable:
+
+```bash
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "How long is the water heater warranty?"}'
+```
+
+Should reference 2027, grounded in the note the upload just created.
+
+Clean up the test artifacts so they don't linger as fake family data:
+
+```bash
+find ~/Lucy/backend/data/files ~/Lucy/backend/data/notes -iname "*water-heater*" -delete
+```
+
+(Chroma will still have a stale chunk referencing the deleted note until
+the collection is rebuilt — harmless for now, but worth knowing; a future
+phase could add a "remove/reingest" script if this becomes annoying.)
+
+### E6. Test a real upload from the phone
+
+> **HUMAN ACTION REQUIRED:** tap the "+" button in the PWA, pick an actual
+> document (a PDF, a photo of something, whatever), and confirm the
+> filing result shown in the chat looks sensible, then ask Lucy about it.
+
+### E7. Report back
+
+Tell the user:
+- Whether the smoke test and the real phone upload both worked
+- What category/tags/summary Ollama produced for the real test file
+- Anything that deviated from this doc
+
+**Not in scope for this pass:** Google Drive sync (Phase 5) builds on
+this pipeline next — pulling files from a "Lucy Inbox" Drive folder
+through this same extract → classify → organize flow.
