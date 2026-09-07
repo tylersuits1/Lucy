@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     google_token_file: str = "./secrets/token.json"
     drive_inbox_folder_id: str = ""
     drive_exports_folder_id: str = ""
+    drive_poll_interval_seconds: int = 300
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
