@@ -1,0 +1,10 @@
+.env
+secrets/
+backend/data/chroma/
+backend/venv/
+backend/.venv/
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+frontend/.next/
