@@ -282,3 +282,114 @@ Confirm and summarize for the user:
 systemd unit in `deploy/lucy-backend.service` so the backend survives
 reboots, Caddy, the RAG/Chroma pipeline, file upload, and Drive sync. Those
 come in later phases per the main project brief.
+
+---
+
+# Lucy-Omarchy Phase 2
+
+**Goal of this pass:** get the RAG pipeline (Chroma + local embeddings) that
+was just built and tested on the dev Mac running here on `lucy-omarchy` too,
+with real family notes ingested and `/chat` giving answers grounded in them
+instead of generic replies.
+
+**Already true going into this** (from Phase 1): repo cloned at `~/Lucy`,
+venv at `~/Lucy/backend/venv`, Ollama running with `llama3.1:8b` pulled,
+Tailscale connected (hostname `lucy-omarchy`, IP `100.87.24.48`). This
+machine has **7.7GiB RAM** — under the ~8GB comfort threshold — so watch for
+slowness once the embedding model is loaded alongside Ollama.
+
+If you are Claude Code reading this: work through **Part C** in order,
+verifying each step. The step marked **HUMAN ACTION REQUIRED** needs the
+user to decide on and supply real content — don't guess family details on
+their behalf.
+
+## Part C — Steps for Claude Code to execute (RAG pipeline)
+
+### C1. Pull the Phase 2 code
+
+```bash
+cd ~/Lucy
+git pull
+```
+
+Verify: `ls backend/app/rag/` should now show `embed.py` and `retrieve.py`
+alongside the existing `ollama_client.py`, and `backend/scripts/ingest_notes.py`
+should exist.
+
+### C2. Install the new Python dependencies
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+This pulls in `chromadb` and `sentence-transformers` — the latter depends
+on `torch`, which is a much larger download than anything from Phase 1
+(roughly 500MB–2GB depending on the platform wheel it resolves to). Check
+free disk space first if the connection is slow:
+
+```bash
+df -h /
+```
+
+A slow install here is expected and one-time — it's not a sign anything's
+wrong.
+
+### C3. Add real family notes
+
+> **HUMAN ACTION REQUIRED:** Chroma has nothing to retrieve until real notes
+> exist in `~/Lucy/backend/data/notes/`. Decide what Lucy should know first
+> — house rules, schedules, important dates, whatever's actually useful —
+> and get it into that folder as one or more `.md` files. Options:
+> - Dictate the content to Claude Code and have it write the file directly.
+> - Copy existing notes over from another machine with `scp`.
+> - If you just want to confirm the pipeline works before writing anything
+>   real, have Claude Code create a placeholder note with one clear fact
+>   (e.g. "trash pickup is Tuesdays") — the same acceptance test used on the
+>   dev Mac.
+
+### C4. Run the ingestion script
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+python scripts/ingest_notes.py
+```
+
+Expect one line per file with its chunk count, then a total. The first run
+downloads the `all-MiniLM-L6-v2` embedding model (~90MB) from Hugging Face —
+a `Warning: You are sending unauthenticated requests to the HF Hub` message
+is expected and harmless.
+
+Re-run this script any time notes are added or edited. It's safe to re-run:
+chunks are upserted by file path, so re-ingesting a changed file replaces
+its old chunks rather than duplicating them.
+
+### C5. Confirm /chat gives a grounded answer
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+sleep 2
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "<a question whose answer is in one of the ingested notes>"}'
+kill %1
+```
+
+The reply should reflect the actual fact from the note, not a generic or
+made-up answer. If it doesn't: confirm C4 reported chunks > 0 for that file,
+and try rephrasing the question closer to the note's wording — embedding
+search matches on meaning but still does better with closer phrasing.
+
+### C6. Report back
+
+Tell the user:
+- How many notes/chunks were ingested
+- The test question asked and whether the answer was correctly grounded
+- Any slowness or memory pressure noticed given the 7.7GiB RAM, now that
+  the embedding model is loaded alongside Ollama
+
+**Not in scope for this pass:** file upload/auto-classification, Google
+Drive sync, the frontend, systemd/Caddy — later phases per the main project
+brief.
