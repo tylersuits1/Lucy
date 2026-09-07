@@ -50,10 +50,13 @@ sync.
 
 ## Project status
 
-Currently in **Phase 1: core chat loop** — a `/chat` endpoint that proxies to
-a local Ollama model, no retrieval yet. See `Lucy(AI) About.md` for the full
-phased build plan (RAG, file upload/auto-organization, Drive sync, PWA
-frontend, networking, and an optional later LoRA fine-tuning pass).
+Phases 1 (core chat loop) and 2 (RAG pipeline) are done — `/chat` retrieves
+relevant chunks from Chroma and answers grounded in ingested notes, verified
+on both the dev machine and the Omarchy server (`lucy-omarchy`, reachable
+over Tailscale). Up next: **Phase 3, communication on all devices** — a PWA
+frontend plus systemd/Caddy so Lucy is reliably reachable from a phone and
+other devices, before file upload/auto-organization (now Phase 4) and Drive
+sync (now Phase 5). See `Lucy(AI) About.md` for the full phased build plan.
 
 ## Setup
 
