@@ -34,7 +34,7 @@ async def post_upload(file: UploadFile = File(...)) -> UploadResponse:
         if not text.strip():
             raise ExtractionError("Could not extract any text from this file.")
         classification = await classify(text)
-        result = organize(tmp_path, file.filename or tmp_path.name, classification)
+        result = organize(tmp_path, file.filename or tmp_path.name, classification, text)
     except ExtractionError as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc

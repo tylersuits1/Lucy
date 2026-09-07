@@ -12,7 +12,7 @@ def _slugify(name: str) -> str:
     return slug or "untitled"
 
 
-def organize(temp_path: Path, original_filename: str, classification: dict) -> dict:
+def organize(temp_path: Path, original_filename: str, classification: dict, extracted_text: str) -> dict:
     settings = get_settings()
     data_dir = Path(settings.data_dir)
 
@@ -41,6 +41,8 @@ def organize(temp_path: Path, original_filename: str, classification: dict) -> d
                 f"- File: {final_path.relative_to(data_dir)}",
                 "",
                 summary,
+                "",
+                extracted_text,
             ]
         ),
         encoding="utf-8",
