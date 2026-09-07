@@ -812,3 +812,98 @@ Tell the user:
 - Whether all three commands worked from the actual phone/PWA
 - Whether the btop link opened and the login prompt worked
 - Anything that deviated from this doc
+
+---
+
+# Lucy-Omarchy — Fix: Stay Awake With the Lid Closed
+
+**Why this exists:** confirmed by direct incident — closing the lid took
+`lucy-omarchy` fully offline (unreachable over Tailscale), even though it
+was plugged into AC power at the time. This machine is meant to run
+24/7, tucked away somewhere with the lid closed (see the "Always On
+Needs" notes) — so this isn't optional, it's a requirement for the whole
+project to actually work as intended.
+
+Since closing the lid dropped the machine *even on AC power*, the default
+`HandleLidSwitchExternalPower` behavior either isn't set to `ignore`, or
+something outside `logind` (most likely `hypridle`, which Omarchy's
+Hyprland desktop runs by default for laptop power-saving) is suspending
+it independently. Fix both layers rather than guessing which one it was.
+
+## Part H — Steps for Claude Code to execute
+
+### H1. Mask the sleep targets at the systemd level
+
+This is the authoritative fix — it makes the machine structurally unable
+to sleep, no matter what tries to trigger it (lid, idle timer, GUI,
+`hypridle`, anything):
+
+```bash
+sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+```
+
+> **HUMAN ACTION REQUIRED:** sudo password.
+
+Verify:
+
+```bash
+systemctl status sleep.target
+```
+
+Should show `Loaded: masked`.
+
+### H2. Tell logind to ignore the lid switch entirely
+
+Defense in depth, and fixes the actual reported symptom directly:
+
+```bash
+sudo sed -i \
+  -e 's/^#\?HandleLidSwitch=.*/HandleLidSwitch=ignore/' \
+  -e 's/^#\?HandleLidSwitchExternalPower=.*/HandleLidSwitchExternalPower=ignore/' \
+  -e 's/^#\?HandleLidSwitchDocked=.*/HandleLidSwitchDocked=ignore/' \
+  /etc/systemd/logind.conf
+sudo systemctl restart systemd-logind
+```
+
+> **HUMAN ACTION REQUIRED:** sudo password. Restarting `systemd-logind`
+> can momentarily disrupt an active desktop session — fine for a headless
+> always-on box, just don't be surprised if a local display session
+> hiccups when you run this.
+
+Verify:
+
+```bash
+grep -E '^HandleLidSwitch' /etc/systemd/logind.conf
+```
+
+Should show all three set to `ignore`.
+
+### H3. Check for hypridle overriding this independently
+
+```bash
+cat ~/.config/hypr/hypridle.conf 2>/dev/null
+```
+
+If it exists and has a `suspend` (or `dpms`/`lock` chained into a
+suspend) action on a timeout, either comment out that block or disable
+the service entirely:
+
+```bash
+systemctl --user disable --now hypridle
+```
+
+(`hypridle` runs as a *user* service tied to the graphical session, not
+system-wide — note `--user`, no `sudo` needed here.)
+
+### H4. Real test — the one that actually matters
+
+> **HUMAN ACTION REQUIRED:** close the lid, leave it closed for a few
+> minutes, then check Tailscale from your phone. `lucy-omarchy` should
+> still show as connected, and the PWA should still respond.
+
+### H5. Report back
+
+Tell the user:
+- Whether `sleep.target` shows masked
+- Whether the lid-close test actually stayed connected
+- Whether `hypridle` was found running and what was done about it
