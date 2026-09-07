@@ -407,3 +407,148 @@ Tell the user:
 **Not in scope for this pass:** file upload/auto-classification, Google
 Drive sync, the frontend, systemd/Caddy — later phases per the main project
 brief.
+
+---
+
+# Lucy-Omarchy Phase 3
+
+**Goal of this pass:** deploy the PWA frontend that was just built on the dev
+Mac, and put both the backend and frontend under systemd so Lucy survives
+reboots. When this is done, Lucy should be usable from a phone: open a URL,
+ask a question, get an answer, and it should keep working after the server
+reboots — this machine is meant to run always-on, since Tailscale access
+only works while it's actually reachable on the tailnet.
+
+**Already true going into this:** repo cloned at `~/Lucy`, backend venv set
+up with the RAG pipeline working, Ollama running, Tailscale connected
+(hostname `lucy-omarchy`, IP `100.87.24.48`).
+
+If you are Claude Code reading this: work through **Part D** in order. The
+reboot-survival check (D6) ends this terminal session — say so before
+running it, and pick back up verification afterward once reconnected.
+
+## Part D — Steps for Claude Code to execute (frontend + systemd)
+
+### D1. Pull the Phase 3 code
+
+```bash
+cd ~/Lucy
+git pull
+```
+
+Verify: `ls frontend/src/app/` should show `page.tsx`, `layout.tsx`,
+`manifest.ts`, `icon.tsx`, `apple-icon.tsx`. `ls deploy/` should show
+`lucy-backend.service`, `lucy-frontend.service`, and `Caddyfile`.
+
+### D2. Install Node.js
+
+```bash
+node --version || sudo pacman -S --needed --noconfirm nodejs npm
+```
+
+Omarchy is dev-focused and may already have Node installed — `--needed`
+skips it if so.
+
+### D3. Install frontend dependencies
+
+```bash
+cd ~/Lucy/frontend
+npm install
+```
+
+### D4. Point the frontend at the backend's Tailscale address
+
+This is the one step that's easy to get wrong: the API URL gets baked into
+the browser-side JavaScript at build time, and that JavaScript runs in the
+**viewer's** browser (a phone), not on this server. `localhost` would
+resolve to the phone itself and fail. Use this machine's Tailscale IP or
+MagicDNS hostname instead:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Edit `.env.local` so it reads:
+
+```
+NEXT_PUBLIC_API_BASE_URL=http://100.87.24.48:8000
+```
+
+(Or `http://lucy-omarchy:8000` if MagicDNS is enabled and resolving on the
+devices you'll use — the raw IP is more foolproof if unsure.)
+
+### D5. Build and start both services under systemd
+
+Build the frontend (this is what actually bakes in the API URL from D4):
+
+```bash
+cd ~/Lucy/frontend
+npm run build
+```
+
+Install the systemd unit templates, substituting the real user and home
+directory:
+
+```bash
+cd ~/Lucy/deploy
+sed -e "s|__LUCY_USER__|$USER|g" -e "s|__LUCY_HOME__|$HOME|g" lucy-backend.service | sudo tee /etc/systemd/system/lucy-backend.service > /dev/null
+sed -e "s|__LUCY_USER__|$USER|g" -e "s|__LUCY_HOME__|$HOME|g" lucy-frontend.service | sudo tee /etc/systemd/system/lucy-frontend.service > /dev/null
+sudo systemctl daemon-reload
+sudo systemctl enable --now lucy-backend lucy-frontend
+```
+
+> **HUMAN ACTION REQUIRED:** the `sudo` calls need the account password.
+
+Verify both are actually up:
+
+```bash
+systemctl status lucy-backend --no-pager
+systemctl status lucy-frontend --no-pager
+curl -s http://localhost:8000/health
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000
+```
+
+### D6. Confirm it survives a reboot
+
+> **HUMAN ACTION REQUIRED / heads up:** this ends the current terminal
+> session. Tell the user before running it.
+
+```bash
+sudo reboot
+```
+
+After it comes back up (give it a minute or two), reconnect and verify
+without starting anything manually:
+
+```bash
+systemctl status lucy-backend --no-pager
+systemctl status lucy-frontend --no-pager
+curl -s http://localhost:8000/health
+```
+
+Both should already be running — that's the whole point of D5.
+
+### D7. Test from an actual phone
+
+> **HUMAN ACTION REQUIRED:** this part only the user can do.
+> 1. Install the Tailscale app on the phone from the App Store / Play
+>    Store, and sign into the same account used to set up `lucy-omarchy`
+>    (originally at [tailscale.com](https://tailscale.com)).
+> 2. With Tailscale connected on the phone, open
+>    `http://100.87.24.48:3000` in the phone's browser.
+> 3. Ask Lucy something and confirm a real answer comes back.
+> 4. On iOS Safari: tap the Share icon → **Add to Home Screen** to install
+>    it as an app icon.
+
+### D8. Report back
+
+Tell the user:
+- Whether both systemd services came back up cleanly after the reboot
+  test, with no manual intervention
+- Whether the phone test worked, and what URL was used
+- Anything that deviated from this doc
+
+**Not in scope for this pass:** the Caddyfile in `deploy/` is there for
+later if you want one clean address instead of two ports — optional, not
+required for Phase 3 to be considered done. File upload/auto-organization
+and Drive sync are Phases 4 and 5.
