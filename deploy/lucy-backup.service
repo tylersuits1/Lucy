@@ -1,0 +1,8 @@
+[Unit]
+Description=Lucy data backup to Google Drive (rclone)
+
+[Service]
+Type=oneshot
+User=__LUCY_USER__
+ExecStart=/usr/bin/rclone copy __LUCY_HOME__/Lucy/backend/data/notes gdrive:LucyBackup/notes --create-empty-src-dirs
+ExecStart=/usr/bin/rclone copy __LUCY_HOME__/Lucy/backend/data/files gdrive:LucyBackup/files --create-empty-src-dirs
