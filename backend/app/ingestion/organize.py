@@ -12,6 +12,18 @@ def _slugify(name: str) -> str:
     return slug or "untitled"
 
 
+def _unique_stem(directory: Path, stem: str, suffix: str) -> str:
+    """Disambiguate stem if directory/stem+suffix already exists, so bulk imports of
+    similarly-named documents (e.g. several years of "insurance-policy") don't
+    silently overwrite each other."""
+    if not (directory / f"{stem}{suffix}").exists():
+        return stem
+    counter = 2
+    while (directory / f"{stem}-{counter}{suffix}").exists():
+        counter += 1
+    return f"{stem}-{counter}"
+
+
 def organize(temp_path: Path, original_filename: str, classification: dict, extracted_text: str) -> dict:
     settings = get_settings()
     data_dir = Path(settings.data_dir)
@@ -24,10 +36,11 @@ def organize(temp_path: Path, original_filename: str, classification: dict, extr
 
     files_dir = data_dir / "files" / category
     files_dir.mkdir(parents=True, exist_ok=True)
-    final_path = files_dir / f"{base_filename}{extension}"
+    unique_stem = _unique_stem(files_dir, base_filename, extension)
+    final_path = files_dir / f"{unique_stem}{extension}"
     shutil.move(str(temp_path), final_path)
 
-    note_relative_path = f"{category}/{base_filename}.md"
+    note_relative_path = f"{category}/{unique_stem}.md"
     note_path = data_dir / "notes" / note_relative_path
     note_path.parent.mkdir(parents=True, exist_ok=True)
     note_path.write_text(
