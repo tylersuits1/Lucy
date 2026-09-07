@@ -50,3 +50,12 @@ def add_document(path: str, text: str) -> int:
 
     collection.upsert(ids=ids, documents=chunks, metadatas=metadatas)
     return len(chunks)
+
+
+def remove_document(path: str) -> None:
+    """Remove all chunks for a document from Chroma, keyed by the same path used to add it.
+
+    Deleting the underlying note/file alone leaves it searchable — Chroma
+    has no other way to know it's gone.
+    """
+    get_collection().delete(where={"path": path})
