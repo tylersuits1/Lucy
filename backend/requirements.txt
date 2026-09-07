@@ -9,6 +9,3 @@ pypdf
 python-docx
 pytesseract
 Pillow
-google-auth
-google-auth-oauthlib
-google-api-python-client
