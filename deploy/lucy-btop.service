@@ -1,0 +1,13 @@
+[Unit]
+Description=Web terminal for viewing btop (linked from Lucy's /health command)
+After=network-online.target
+
+[Service]
+Type=simple
+User=__LUCY_USER__
+ExecStart=/usr/bin/ttyd -p 7681 -c __TTYD_USER__:__TTYD_PASSWORD__ btop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

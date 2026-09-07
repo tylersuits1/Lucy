@@ -6,6 +6,8 @@ from pydantic import BaseModel
 
 from app.rag.ollama_client import OllamaError, chat as ollama_chat
 from app.rag.retrieve import retrieve
+from app.system.control import ServiceControlError, start_ollama, stop_ollama
+from app.system.health import get_health_summary
 
 router = APIRouter()
 
@@ -28,8 +30,37 @@ def _build_system_prompt(chunks: list[str]) -> str | None:
     )
 
 
+async def _handle_command(command: str) -> str | None:
+    """Slash commands are handled directly, never sent to the LLM."""
+    if command == "/health":
+        return await asyncio.to_thread(get_health_summary)
+
+    if command == "/kill":
+        try:
+            await asyncio.to_thread(stop_ollama)
+        except ServiceControlError as exc:
+            return f"Couldn't stop Ollama: {exc}"
+        return (
+            "Ollama stopped. Chat and uploads won't work until you send /start — "
+            "everything else (this web app, file storage) is unaffected."
+        )
+
+    if command == "/start":
+        try:
+            await asyncio.to_thread(start_ollama)
+        except ServiceControlError as exc:
+            return f"Couldn't start Ollama: {exc}"
+        return "Ollama is starting back up — give it a few seconds before asking a question."
+
+    return None
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def post_chat(request: ChatRequest) -> ChatResponse:
+    command_reply = await _handle_command(request.message.strip().lower())
+    if command_reply is not None:
+        return ChatResponse(reply=command_reply)
+
     chunks = await asyncio.to_thread(retrieve, request.message)
     system_prompt = _build_system_prompt(chunks)
 
