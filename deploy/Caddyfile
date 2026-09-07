@@ -1,0 +1,20 @@
+# Optional: a single clean address for Lucy instead of separate ports.
+# Not required for Phase 3 — the frontend (port 3000) and backend (port
+# 8000) work fine as separate ports reachable over Tailscale. Use this if
+# you'd rather visit one hostname and have API calls proxied invisibly.
+#
+# Replace lucy-omarchy with your actual Tailscale MagicDNS hostname (see
+# `tailscale status`), then update frontend/.env.local's
+# NEXT_PUBLIC_API_BASE_URL to match this address before rebuilding.
+
+lucy-omarchy {
+	handle /chat* {
+		reverse_proxy localhost:8000
+	}
+	handle /health {
+		reverse_proxy localhost:8000
+	}
+	handle {
+		reverse_proxy localhost:3000
+	}
+}

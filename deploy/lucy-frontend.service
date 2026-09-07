@@ -1,0 +1,15 @@
+[Unit]
+Description=Lucy frontend (Next.js)
+After=network-online.target lucy-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__LUCY_USER__
+WorkingDirectory=__LUCY_HOME__/Lucy/frontend
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
