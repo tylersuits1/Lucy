@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic-settings
-httpx
+google-genai
 python-multipart
 chromadb
 sentence-transformers

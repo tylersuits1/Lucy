@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.ingestion.classify import ClassificationError, classify
 from app.ingestion.extract import ExtractionError, extract_text
 from app.ingestion.organize import organize
-from app.rag.ollama_client import OllamaError
+from app.rag.gemini_client import GeminiError
 
 router = APIRouter()
 
@@ -38,7 +38,7 @@ async def post_upload(file: UploadFile = File(...)) -> UploadResponse:
     except ExtractionError as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except (ClassificationError, OllamaError) as exc:
+    except (ClassificationError, GeminiError) as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

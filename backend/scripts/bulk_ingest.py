@@ -7,12 +7,13 @@ Run from the backend/ directory with the venv active:
     python scripts/bulk_ingest.py [path]
 
 Defaults to backend/data/incoming/ if no path is given. Each supported
-file is extracted, classified by Ollama, and filed into
+file is extracted, classified by Gemini, and filed into
 data/files/<category>/ — the same pipeline as a normal upload, just
 batched. Unsupported file types are skipped (left in place, not deleted)
 and reported at the end. Processed files are moved out of the source
-folder as they're handled, so re-running after an interruption only
-picks up what's left.
+folder as they're handled, so re-running after an interruption (including
+hitting a rate limit — the free tier is capped at 1,000 requests/day)
+only picks up what's left.
 """
 import asyncio
 import sys
@@ -23,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.ingestion.classify import ClassificationError, classify
 from app.ingestion.extract import SUPPORTED_EXTENSIONS, ExtractionError, extract_text
 from app.ingestion.organize import organize
-from app.rag.ollama_client import OllamaError
+from app.rag.gemini_client import GeminiError
 
 
 async def process_file(path: Path) -> None:
@@ -68,12 +69,13 @@ async def main() -> None:
         except ClassificationError as exc:
             print(f"  ERROR classifying {path.name}: {exc}")
             errors += 1
-        except OllamaError as exc:
+        except GeminiError as exc:
             remaining = len(paths) - index - 1
-            print(f"\nOllama is unreachable: {exc}")
+            print(f"\nGemini API error: {exc}")
             print(
                 f"Stopping here — {remaining} file(s) not yet attempted, left in place. "
-                "Check `ollama list` and re-run the script once it's back up."
+                "If this was a rate limit, wait a bit and re-run the script to pick up "
+                "where it left off."
             )
             break
 

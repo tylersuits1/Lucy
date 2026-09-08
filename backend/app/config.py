@@ -5,8 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    ollama_host: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite"
     chroma_persist_dir: str = "./data/chroma"
     data_dir: str = "./data"
 

@@ -1,7 +1,7 @@
 """LLM-based classification of extracted document text."""
 import json
 
-from app.rag.ollama_client import chat
+from app.rag.gemini_client import chat
 
 CLASSIFY_SYSTEM_PROMPT = (
     "You are a document filing assistant. Given the text of a document, respond with a JSON "
@@ -12,7 +12,7 @@ CLASSIFY_SYSTEM_PROMPT = (
     "Respond with ONLY the JSON object, no other text."
 )
 
-# Keeps the prompt a reasonable size for a small local model.
+# Keeps token usage (and cost) bounded per document.
 MAX_INPUT_CHARS = 6000
 
 
