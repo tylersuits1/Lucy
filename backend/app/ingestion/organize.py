@@ -1,6 +1,7 @@
 """Move a classified upload into place and ingest a companion note for it."""
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.config import get_settings
@@ -24,9 +25,16 @@ def _unique_stem(directory: Path, stem: str, suffix: str) -> str:
     return f"{stem}-{counter}"
 
 
-def organize(temp_path: Path, original_filename: str, classification: dict, extracted_text: str) -> dict:
+def organize(
+    temp_path: Path,
+    original_filename: str,
+    classification: dict,
+    extracted_text: str,
+    uploaded_by: str = "unknown",
+) -> dict:
     settings = get_settings()
     data_dir = Path(settings.data_dir)
+    upload_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     category = _slugify(str(classification["category"]))
     base_filename = _slugify(str(classification["filename"]))
@@ -51,6 +59,8 @@ def organize(temp_path: Path, original_filename: str, classification: dict, extr
                 f"- Original filename: {original_filename}",
                 f"- Category: {category}",
                 f"- Tags: {', '.join(tags)}",
+                f"- Uploaded by: {uploaded_by}",
+                f"- Upload date: {upload_date}",
                 f"- File: {final_path.relative_to(data_dir)}",
                 "",
                 summary,

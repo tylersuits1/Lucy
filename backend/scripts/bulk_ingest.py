@@ -33,7 +33,7 @@ async def process_file(path: Path) -> None:
         raise ExtractionError("no extractable text")
 
     classification = await classify(text)
-    result = organize(path, path.name, classification, text)
+    result = organize(path, path.name, classification, text, uploaded_by="bulk import")
     print(f"  filed: {path.name} -> {result['file_path']} ({result['chunks_ingested']} chunks)")
 
 

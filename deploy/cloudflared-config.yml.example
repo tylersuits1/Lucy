@@ -1,0 +1,17 @@
+# ~/.cloudflared/config.yml on lucy-omarchy.
+# Fill in <TUNNEL_ID> and <LINUX_USER> after `cloudflared tunnel create lucy-tunnel`.
+# See OMARCHY_SETUP.md Part K for the full walkthrough.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /home/<LINUX_USER>/.cloudflared/<TUNNEL_ID>.json
+
+# Path-based routing to one hostname: API routes go to FastAPI (:8000),
+# everything else (the PWA itself) goes to the Next.js frontend (:3000).
+# Order matters — cloudflared uses the first matching rule.
+ingress:
+  - hostname: lucy.tylersuits.com
+    path: ^/(auth|chat|upload|history|health)(/.*)?$
+    service: http://localhost:8000
+  - hostname: lucy.tylersuits.com
+    service: http://localhost:3000
+  - service: http_status:404

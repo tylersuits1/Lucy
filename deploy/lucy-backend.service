@@ -1,6 +1,6 @@
 [Unit]
 Description=Lucy backend (FastAPI)
-After=network-online.target ollama.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]

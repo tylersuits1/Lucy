@@ -1,8 +1,9 @@
 # Lucy — Family AI Assistant
 
 Lucy is a self-hosted AI assistant for household use. It runs entirely on a
-home server, is reachable from mobile and any computer via a private
-network (Tailscale), answers questions using a RAG (retrieval-augmented
+home server, reachable both over Tailscale and (once Part K of
+`OMARCHY_SETUP.md` is deployed) publicly at `lucy.tylersuits.com` behind a
+per-user login, answers questions using a RAG (retrieval-augmented
 generation) pipeline over family documents/notes, can ingest uploaded files
 and auto-organize them, and backs itself up to Google Drive. All data
 storage and retrieval stays local — the LLM call itself goes to the Gemini
@@ -13,8 +14,10 @@ only see files it created itself).
 ## Architecture
 
 ```
-[Web/mobile client] --(Tailscale, HTTPS)--> [FastAPI backend on Omarchy server]
-                                                    |
+[Web/mobile client] --(Cloudflare Tunnel or Tailscale, HTTPS)--> [FastAPI backend on Omarchy server]
+                                                    |                          |
+                                          [JWT auth, SQLite]                   |
+                                          (users/conversations/messages)       |
                         +---------------------------+---------------------------+
                         |                            |                          |
               [Gemini API (LLM)]          [Chroma (vector DB, embedded)]  [Local filesystem]
@@ -28,14 +31,23 @@ only see files it created itself).
 - **LLM runtime**: Gemini API (`gemini-3.1-flash-lite` by default) — see
   below for why this replaced a locally-run Ollama model
 - **Vector DB**: Chroma, embedded (no separate server process)
+- **Auth**: per-user login (bcrypt-hashed passwords, JWT bearer tokens);
+  chat history is stored in SQLite, private per-user by default with an
+  option to start a conversation flagged shared, visible to the whole
+  household
 - **Canonical storage**: local filesystem, Markdown as the primary note
   format, plus a folder for original uploaded files (PDFs, images, docx, etc.)
+  — uploaded documents are retrievable by anyone in the household who asks
+  (a shared family knowledge base, not siloed per-user)
 - **Google Drive**: one-way daily backup via `rclone` (a systemd timer, not
   a Python dependency), scoped to Drive's `drive.file` permission — see
   `BACKUP_SETUP.md`
-- **Remote access**: Tailscale mesh network — no public exposure
+- **Remote access**: Tailscale mesh network, plus (once deployed) a
+  Cloudflare Tunnel exposing `lucy.tylersuits.com` publicly, gated by the
+  app's own JWT login and (recommended) a second Cloudflare Access wall —
+  see "Why these choices" for why this changed from Tailscale-only
 - **Frontend**: React/Next.js PWA (installable to iOS home screen), talks to
-  the FastAPI backend over the Tailscale network
+  the FastAPI backend over the same origin it's served from
 
 ## Why these choices
 
@@ -54,9 +66,17 @@ only see files it created itself).
   maintain on modest hardware. Plenty capable for a family-scale knowledge
   base (thousands of documents, not millions). Migrating to something like
   Qdrant later is possible since the RAG logic sits above the vector store.
-- **Tailscale over public hosting**: private mesh network means no port
-  forwarding, no public attack surface, and no reverse-proxy/TLS-cert
-  maintenance burden beyond what Tailscale + Caddy already handle.
+- **Tailscale-only, later relaxed to a Cloudflare Tunnel**: originally
+  restricted to Tailscale specifically to avoid any public attack surface.
+  Revisited once the household wanted Lucy reachable without requiring
+  Tailscale on every device (e.g. a guest device, or a phone with the VPN
+  extension backgrounded/killed — a real failure mode hit in practice, see
+  the dev log). A Cloudflare Tunnel avoids port-forwarding and gets
+  automatic TLS, and the app now requires a JWT login on every request
+  regardless of network path — Tailscale isn't the only thing standing
+  between a request and the data anymore. Cloudflare Access (an optional
+  second login wall in front of the tunnel) is recommended in
+  `OMARCHY_SETUP.md` Part K but not yet mandatory.
 
 ## Project status
 
@@ -70,8 +90,15 @@ Drive backup) has a documented setup path (`BACKUP_SETUP.md`) using
 Drive folder was scrapped as too large a privacy footprint; local data now
 backs up to Drive one-way instead. The LLM backend was later switched from
 a locally-run Ollama model to the Gemini API to resolve persistent RAM
-pressure on the server hardware — see "Why these choices." See
-`Lucy(AI) About.md` for the full phased build plan.
+pressure on the server hardware — see "Why these choices."
+
+Built since, on the dev Mac, not yet deployed: per-user login (JWT,
+bcrypt-hashed passwords), SQLite-backed chat history (private per-user by
+default, with a shared "family thread" option), and the "uploaded by"
+provenance stamp on ingested documents. Deploy steps are `OMARCHY_SETUP.md`
+Part J. Public exposure via a Cloudflare Tunnel at `lucy.tylersuits.com`
+(Part K) is written but not yet run — still Tailscale-only in production as
+of this writing. See `Lucy(AI) About.md` for the full phased build plan.
 
 ## Setup
 
@@ -89,7 +116,15 @@ Requires a Gemini API key in `GEMINI_API_KEY` — get one at
 [aistudio.google.com/apikey](https://aistudio.google.com/apikey) and
 enable billing on it (free-tier content is used to improve Google's
 products; paid-tier isn't). `GEMINI_MODEL` defaults to
-`gemini-3.1-flash-lite`.
+`gemini-3.1-flash-lite`. Also requires `JWT_SECRET` — generate one with
+`python3 -c "import secrets; print(secrets.token_hex(32))"` — the app
+refuses to start without it.
+
+Create a user (`/chat`, `/upload`, and `/history` all require login):
+
+```bash
+python scripts/create_user.py
+```
 
 Run the dev server:
 
@@ -100,8 +135,13 @@ uvicorn app.main:app --reload
 Test it:
 
 ```bash
-curl -X POST http://localhost:8000/chat \
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
   -H "Content-Type: application/json" \
+  -d '{"username": "<username>", "password": "<password>"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -d '{"message": "Hello, Lucy"}'
 ```
 
@@ -112,5 +152,12 @@ Interactive API docs are available at `http://localhost:8000/docs`.
 - No training or self-hosting a model — uses the Gemini API.
 - No LoRA fine-tuning (not applicable now that the LLM is API-based, not
   self-hosted).
-- No public internet exposure — remote access is via Tailscale only.
+- No public sign-up — a fixed, household-scale user list created via
+  `scripts/create_user.py`, not an open registration flow.
 - Google Drive is sync-in/sync-out only, never the canonical database.
+
+> Public internet exposure was originally a hard non-goal (Tailscale-only).
+> Relaxed to an optional Cloudflare Tunnel once JWT auth existed as a real
+> access-control layer independent of the network path — see "Why these
+> choices" and `OMARCHY_SETUP.md` Part K. Tailscale access still works
+> either way.

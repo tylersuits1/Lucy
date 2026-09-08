@@ -3,9 +3,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from app.auth import User, get_current_user
 from app.ingestion.classify import ClassificationError, classify
 from app.ingestion.extract import ExtractionError, extract_text
 from app.ingestion.organize import organize
@@ -23,7 +24,9 @@ class UploadResponse(BaseModel):
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def post_upload(file: UploadFile = File(...)) -> UploadResponse:
+async def post_upload(
+    file: UploadFile = File(...), current_user: User = Depends(get_current_user)
+) -> UploadResponse:
     suffix = Path(file.filename or "").suffix
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
@@ -34,7 +37,9 @@ async def post_upload(file: UploadFile = File(...)) -> UploadResponse:
         if not text.strip():
             raise ExtractionError("Could not extract any text from this file.")
         classification = await classify(text)
-        result = organize(tmp_path, file.filename or tmp_path.name, classification, text)
+        result = organize(
+            tmp_path, file.filename or tmp_path.name, classification, text, uploaded_by=current_user.display_name
+        )
     except ExtractionError as exc:
         tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc

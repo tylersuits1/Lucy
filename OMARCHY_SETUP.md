@@ -1007,3 +1007,214 @@ Tell the user:
 - Whether upload/classification still works end to end
 - Whether Ollama was removed or left in place
 - Any deviation from this doc
+
+---
+
+## Part J — Steps for Claude Code to execute (auth + per-user chat history)
+
+Built on the dev Mac: JWT login, a SQLite `users`/`conversations`/`messages`
+schema, `/auth/login`, `/history`, `/history/{id}`, and `/chat` now requires
+a bearer token and persists every message. Conversations are private by
+default; the PWA's "+ Family" button starts one flagged shared, visible to
+every logged-in user. `/upload` now also requires auth (used only to stamp
+"uploaded by" on the resulting note — uploaded documents themselves stay
+visible to the whole household, per the existing shared-Chroma-collection
+design).
+
+### J1. Pull the code
+
+```bash
+cd ~/Lucy && git pull
+```
+
+Verify: `ls backend/app/` should now show `auth.py`, `db.py`,
+`conversations.py`, `persona.py` alongside the existing files.
+
+### J2. Install the new dependencies and set a JWT secret
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Generate a secret and add it to `.env`:
+
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
+
+```
+JWT_SECRET=<paste the generated value>
+```
+
+The backend refuses to start without `JWT_SECRET` set — this is
+intentional (an empty signing key would make every token forgeable).
+
+### J3. Create the two household logins
+
+```bash
+python scripts/create_user.py
+# repeat for the second user
+```
+
+> **HUMAN ACTION REQUIRED:** Tyler and his wife each need to be present
+> (or told their password out of band) to set their own password — don't
+> pick one on their behalf.
+
+### J4. Restart the backend
+
+```bash
+sudo systemctl restart lucy-backend
+```
+
+### J5. Test the login + chat round trip
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "<username from J3>", "password": "<their password>"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
+  -d '{"message": "Say hello in one short sentence."}'
+
+curl -s http://localhost:8000/history -H "Authorization: Bearer $TOKEN"
+```
+
+Should return a real reply (occasionally with an italicized dog-flavor
+line before/after it — that's `app/persona.py`, working as intended) and
+then a one-item history list. Also confirm `curl -s -X POST
+http://localhost:8000/chat -d '{"message": "hi"}'` **without** the
+`Authorization` header now returns `401`.
+
+### J6. Rebuild and restart the frontend
+
+The PWA now has a login screen and a history panel — needs a rebuild:
+
+```bash
+cd ~/Lucy/frontend
+npm install
+npm run build
+sudo systemctl restart lucy-frontend
+```
+
+### J7. Report back
+
+Tell the user:
+- Whether login, `/chat` with a token, and `/history` all worked
+- Whether the unauthenticated `/chat` request correctly got a 401
+- Whether the PWA's login screen and history panel render correctly from
+  a browser on the tailnet
+- Any deviation from this doc
+
+---
+
+## Part K — Steps for Claude Code to execute (Cloudflare Tunnel — public exposure)
+
+**This is an architecture change from the original "Tailscale only, no
+public exposure" plan** (see `Lucy(AI) About.md`'s non-goals) — the
+household decided a real domain + login is worth it for reachability
+without requiring Tailscale on every device. The JWT auth in Part J is
+the access-control layer this depends on; do Part J first.
+
+### K1. Cloudflare account + domain (human-only)
+
+> **HUMAN ACTION REQUIRED:** add `tylersuits.com` to a Cloudflare account
+> (free plan is fine) and point the domain's nameservers at Cloudflare.
+> This can take a few hours to propagate — start it first, do the rest of
+> this Part while waiting.
+
+### K2. Install cloudflared
+
+```bash
+sudo pacman -S cloudflared
+```
+
+### K3. Authenticate and create the tunnel
+
+> **HUMAN ACTION REQUIRED:** `cloudflared tunnel login` opens a browser —
+> needs Tyler physically at the machine (or a forwarded browser session).
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create lucy-tunnel
+```
+
+Note the tunnel ID printed — needed for K4.
+
+### K4. Configure the tunnel
+
+Copy `deploy/cloudflared-config.yml.example` to `~/.cloudflared/config.yml`,
+filling in `<TUNNEL_ID>` and `<LINUX_USER>` from K3. This routes
+`/auth`, `/chat`, `/upload`, `/history`, `/health` to the FastAPI backend
+(`:8000`) and everything else (the PWA itself) to the Next.js frontend
+(`:3000`), all under the one `lucy.tylersuits.com` hostname — no CORS
+complexity, no second hostname to manage.
+
+### K5. Route DNS and start the tunnel as a service
+
+```bash
+cloudflared tunnel route dns lucy-tunnel lucy.tylersuits.com
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+```
+
+Verify: `systemctl status cloudflared` shows `active (running)`.
+
+### K6. Point the frontend at the public origin
+
+Since the tunnel now serves both frontend and backend from
+`lucy.tylersuits.com`, update `frontend/.env.local`:
+
+```
+NEXT_PUBLIC_API_BASE_URL=https://lucy.tylersuits.com
+```
+
+```bash
+cd ~/Lucy/frontend
+npm run build
+sudo systemctl restart lucy-frontend
+```
+
+### K7. Verify from outside the tailnet
+
+From a phone on cellular data (not Wi-Fi, not Tailscale — this is the
+actual test of public reachability): visit `https://lucy.tylersuits.com`,
+log in, send a message, confirm a reply comes back. Then Add to Home
+Screen and confirm it opens full-screen with no browser chrome.
+
+### K8. (Recommended) Cloudflare Access — a second login wall
+
+> **HUMAN ACTION REQUIRED:** in the Cloudflare Zero Trust dashboard,
+> create an Access application for `lucy.tylersuits.com`, restrict it to
+> Tyler + his wife's specific email addresses (one-time-code or Google
+> login). This sits in front of the tunnel — a request has to clear
+> Cloudflare Access *before* it ever reaches FastAPI, so it's a real
+> second layer on top of the app's own JWT login, not a redundant one.
+
+### K9. Re-check the security checklist
+
+Confirm, and fix anything not yet true:
+- `GEMINI_API_KEY` and `JWT_SECRET` are in `.env`, and `.env` is
+  git-ignored (it already is — verify nothing slipped into a commit:
+  `git log --all --full-history -- backend/.env`)
+- Cloudflare Access is configured (K8) — if skipped, say so explicitly
+- `cloudflared` and `lucy-backend`/`lucy-frontend` are all
+  `systemctl enable`d (survive reboot), not just started
+- No rate limiting exists yet on `/auth/login` or `/chat` — flag this as
+  outstanding rather than silently skipping it; household-scale traffic
+  makes it low-urgency but it's a real gap once the app is on the public
+  internet
+
+### K10. Report back
+
+Tell the user:
+- Whether `lucy.tylersuits.com` is reachable and resolves via Cloudflare
+- Whether the phone test in K7 worked over cellular data specifically
+  (not just Tailscale/Wi-Fi — that wouldn't prove public reachability)
+- Whether Cloudflare Access is set up, or still needs Tyler to do the
+  Zero Trust dashboard step himself
+- The rate-limiting gap from K9, as an open item
+- Any deviation from this doc
