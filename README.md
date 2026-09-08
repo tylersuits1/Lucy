@@ -1,13 +1,14 @@
 # Lucy — Family AI Assistant
 
-Lucy is a self-hosted, local-first AI assistant for household use. It runs
-entirely on a home server, is reachable from mobile and any computer via a
-private network (Tailscale), answers questions using a RAG
-(retrieval-augmented generation) pipeline over family documents/notes, can
-ingest uploaded files and auto-organize them, and backs itself up to Google
-Drive. No data leaves the local network except that one-way backup — Drive
-is never an intake point, and the backup tool can only see files it created
-itself in Drive, nothing else in the account.
+Lucy is a self-hosted AI assistant for household use. It runs entirely on a
+home server, is reachable from mobile and any computer via a private
+network (Tailscale), answers questions using a RAG (retrieval-augmented
+generation) pipeline over family documents/notes, can ingest uploaded files
+and auto-organize them, and backs itself up to Google Drive. All data
+storage and retrieval stays local — the LLM call itself goes to the Gemini
+API (see "Why these choices" below for why that trade was made), and the
+Drive backup is one-way (local → Drive only, `drive.file`-scoped so it can
+only see files it created itself).
 
 ## Architecture
 
@@ -16,7 +17,7 @@ itself in Drive, nothing else in the account.
                                                     |
                         +---------------------------+---------------------------+
                         |                            |                          |
-                 [Ollama (LLM)]            [Chroma (vector DB, embedded)]  [Local filesystem]
+              [Gemini API (LLM)]          [Chroma (vector DB, embedded)]  [Local filesystem]
                         |                            |                          |
                         +----------- RAG query flow -+                          |
                                                                                  |
@@ -24,7 +25,8 @@ itself in Drive, nothing else in the account.
 ```
 
 - **Backend**: Python, FastAPI
-- **LLM runtime**: Ollama, running locally on the server
+- **LLM runtime**: Gemini API (`gemini-3.1-flash-lite` by default) — see
+  below for why this replaced a locally-run Ollama model
 - **Vector DB**: Chroma, embedded (no separate server process)
 - **Canonical storage**: local filesystem, Markdown as the primary note
   format, plus a folder for original uploaded files (PDFs, images, docx, etc.)
@@ -37,9 +39,16 @@ itself in Drive, nothing else in the account.
 
 ## Why these choices
 
-- **Ollama over cloud APIs**: keeps family data entirely local — nothing
-  leaves the network except the one-way Drive backup. No per-token cost, no
-  dependency on a third party staying up or keeping pricing stable.
+- **Gemini API over local Ollama**: originally ran a local model to keep
+  everything on-box, but the server's 7.7GiB RAM couldn't handle it well —
+  a single request pushed RAM usage to 7.1GiB and into swap. Moving the LLM
+  call itself to Gemini's API removes that constraint entirely (nothing
+  heavy to load locally) while keeping RAG, storage, and retrieval fully
+  local — only the final generation step leaves the box, not the document
+  store. Configured with billing enabled specifically because Google's free
+  tier uses submitted content to improve their products; the paid tier
+  doesn't, and at `gemini-3.1-flash-lite` pricing, family-scale usage costs
+  cents.
 - **Chroma over alternatives (Qdrant, Pinecone, etc.)**: embeds directly into
   the FastAPI process, so there's no separate database server to run and
   maintain on modest hardware. Plenty capable for a family-scale knowledge
@@ -55,12 +64,14 @@ Phases 1-4 are built: core chat loop, the RAG pipeline, a PWA frontend
 reachable from any device over Tailscale (deployed and confirmed working on
 the Omarchy server, `lucy-omarchy`), and file upload with LLM-based
 auto-organization (`POST /upload` extracts text — PDF/docx/OCR — classifies
-it with Ollama, files it away, and makes it immediately searchable). Phase
-5 (Google Drive backup) has a documented setup path (`BACKUP_SETUP.md`)
-using `rclone` rather than app code — a live OAuth app pulling from a
-shared Drive folder was scrapped as too large a privacy footprint; local
-data now backs up to Drive one-way instead. See `Lucy(AI) About.md` for the
-full phased build plan.
+it, files it away, and makes it immediately searchable). Phase 5 (Google
+Drive backup) has a documented setup path (`BACKUP_SETUP.md`) using
+`rclone` rather than app code — a live OAuth app pulling from a shared
+Drive folder was scrapped as too large a privacy footprint; local data now
+backs up to Drive one-way instead. The LLM backend was later switched from
+a locally-run Ollama model to the Gemini API to resolve persistent RAM
+pressure on the server hardware — see "Why these choices." See
+`Lucy(AI) About.md` for the full phased build plan.
 
 ## Setup
 
@@ -74,13 +85,11 @@ pip install -r requirements.txt
 cp .env.example .env   # edit as needed
 ```
 
-Requires [Ollama](https://ollama.com) running and reachable at `OLLAMA_HOST`
-(defaults to `http://localhost:11434`), with the model in `OLLAMA_MODEL`
-pulled:
-
-```bash
-ollama pull llama3.1:8b
-```
+Requires a Gemini API key in `GEMINI_API_KEY` — get one at
+[aistudio.google.com/apikey](https://aistudio.google.com/apikey) and
+enable billing on it (free-tier content is used to improve Google's
+products; paid-tier isn't). `GEMINI_MODEL` defaults to
+`gemini-3.1-flash-lite`.
 
 Run the dev server:
 
@@ -100,8 +109,8 @@ Interactive API docs are available at `http://localhost:8000/docs`.
 
 ## Non-goals (v1)
 
-- No training a model from scratch — uses an existing open-weight model via
-  Ollama.
-- No LoRA fine-tuning in v1 (phase 2 addition once RAG works).
+- No training or self-hosting a model — uses the Gemini API.
+- No LoRA fine-tuning (not applicable now that the LLM is API-based, not
+  self-hosted).
 - No public internet exposure — remote access is via Tailscale only.
 - Google Drive is sync-in/sync-out only, never the canonical database.
