@@ -907,3 +907,103 @@ Tell the user:
 - Whether `sleep.target` shows masked
 - Whether the lid-close test actually stayed connected
 - Whether `hypridle` was found running and what was done about it
+
+---
+
+# Lucy-Omarchy — Migrate to Gemini API (replaces Ollama)
+
+**Why:** this machine has been RAM-constrained since Phase 2 (up to
+7.1 of 7.7GiB during a single request) — Ollama was the entire cause.
+Moving the LLM call to Google's Gemini API removes that problem outright;
+nothing heavy needs to load locally anymore. RAG (Chroma, retrieval,
+upload/classify/organize) is unchanged — only the final "send this to an
+LLM" step moves off-box.
+
+**Also removed as part of this:** the `/kill` and `/start` chat commands
+existed specifically to relieve Ollama's RAM pressure. That problem no
+longer exists, so they're gone from the code. `/health` still works
+(CPU/RAM/disk/uptime + the btop link) — just drops the Ollama-status
+line. The **sudoers rule from Part G4** (`systemctl stop/start ollama`)
+is now unused — harmless to leave, but fine to remove too if you'd
+rather tidy it up (`sudo rm /etc/sudoers.d/lucy-service-control`). The
+`ttyd`/`btop` web terminal from Part G is unaffected and still useful for
+general monitoring.
+
+## Part I — Steps for Claude Code to execute
+
+### I1. Get a Gemini API key first (human-only)
+
+> **HUMAN ACTION REQUIRED:** go to
+> [aistudio.google.com/apikey](https://aistudio.google.com/apikey),
+> create a key, then **enable billing on it** (look for a "Set up
+> billing" / plan upgrade prompt in AI Studio) rather than leaving it on
+> the free tier. This matters: Google's own docs say free-tier content is
+> used to improve their products; paid-tier explicitly isn't. At the
+> pricing for `gemini-3.1-flash-lite` ($0.25/$1.50 per million tokens),
+> family-scale usage costs cents, not dollars — the earlier $10 mentioned
+> covers a very long time.
+
+### I2. Pull the code
+
+```bash
+cd ~/Lucy && git pull
+```
+
+Verify: `ls backend/app/rag/` should show `gemini_client.py`, **not**
+`ollama_client.py`. `ls backend/app/system/` should show `health.py`
+only — `control.py` should be gone.
+
+### I3. Add the API key and install the new dependency
+
+```bash
+cd ~/Lucy/backend
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Edit `.env` — remove the old `OLLAMA_HOST`/`OLLAMA_MODEL` lines if still
+present, add:
+
+```
+GEMINI_API_KEY=<the key from I1>
+GEMINI_MODEL=gemini-3.1-flash-lite
+```
+
+### I4. Restart the backend
+
+```bash
+sudo systemctl restart lucy-backend
+```
+
+### I5. Test for a real reply
+
+```bash
+curl -s -X POST http://localhost:8000/chat -H "Content-Type: application/json" -d '{"message": "Say hello in one short sentence."}'
+```
+
+Should return an actual Gemini-generated reply now — no Ollama involved
+at all. Also re-test an upload (`POST /upload` with a test file, or the
+"+" button in the PWA) to confirm classification still works end to end.
+
+### I6. Optional cleanup — remove Ollama entirely
+
+Since nothing uses it anymore, freeing the ~4.7GB model + the service
+itself is reasonable:
+
+```bash
+sudo systemctl disable --now ollama
+ollama rm llama3.1:8b
+sudo pacman -Rs ollama
+```
+
+> **HUMAN ACTION REQUIRED:** sudo password. This is optional — nothing
+> breaks if you leave Ollama installed and stopped, it just sits there
+> unused.
+
+### I7. Report back
+
+Tell the user:
+- Whether `/chat` returned a real Gemini reply
+- Whether upload/classification still works end to end
+- Whether Ollama was removed or left in place
+- Any deviation from this doc
