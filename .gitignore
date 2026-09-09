@@ -1,5 +1,7 @@
 .env
 secrets/
+/OMARCHY_SETUP.md
+/BACKUP_SETUP.md
 backend/data/chroma/
 backend/data/*.db
 backend/venv/
