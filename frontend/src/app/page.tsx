@@ -19,6 +19,42 @@ type Message = {
   text: string;
 };
 
+type ExampleMessage = { role: "user" | "assistant" | "upload"; text: string };
+
+function ExampleChat({ label, messages }: { label: string; messages: ExampleMessage[] }) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-4">
+      <p className="text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">
+        {label}
+      </p>
+      <div className="flex flex-col gap-2">
+        {messages.map((message, index) => (
+          <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`rounded-2xl px-3 py-1.5 max-w-[85%] whitespace-pre-wrap text-sm ${
+                message.role === "user"
+                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-black"
+                  : message.role === "upload"
+                    ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200"
+                    : "bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
+              }`}
+            >
+              {message.text}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const FEATURES = [
+  "Ask anything about the house — Lucy answers from your own uploaded documents, not the open internet.",
+  "Drop in a file and it's filed automatically: warranties, manuals, insurance, whatever.",
+  "Every conversation is private by default, with an option to share it with the whole family.",
+  "Self-hosted on our own server — nothing about your home lives in someone else's cloud.",
+];
+
 function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: StoredUser) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -40,34 +76,83 @@ function LoginScreen({ onLoggedIn }: { onLoggedIn: (user: StoredUser) => void })
   }
 
   return (
-    <div className="flex flex-col items-center justify-center h-dvh bg-zinc-50 dark:bg-black px-4">
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 w-full max-w-xs">
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50 text-center mb-2">Lucy</h1>
-        <input
-          type="text"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          placeholder="Username"
-          autoComplete="username"
-          className="rounded-lg px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none"
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
-          autoComplete="current-password"
-          className="rounded-lg px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none"
-        />
-        {error && <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={isBusy || !username || !password}
-          className="rounded-lg px-5 py-2 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-black font-medium disabled:opacity-40"
+    <div className="min-h-dvh bg-zinc-50 dark:bg-black px-6 py-10 md:py-16">
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-[1fr_320px] gap-10 md:gap-16 items-start">
+        <div className="flex flex-col gap-8">
+          <div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/icon-192.png" alt="" className="w-14 h-14 rounded-2xl mb-4" />
+            <h1 className="text-3xl font-semibold text-zinc-900 dark:text-zinc-50">Lucy</h1>
+            <p className="text-zinc-500 dark:text-zinc-400 mt-1">
+              A self-hosted AI assistant for our household — RAG over our own documents, no
+              data leaving our own server.
+            </p>
+          </div>
+
+          <ul className="flex flex-col gap-2.5">
+            {FEATURES.map((feature, index) => (
+              <li key={index} className="flex gap-2.5 text-sm text-zinc-600 dark:text-zinc-300">
+                <span className="text-zinc-300 dark:text-zinc-600 mt-0.5">•</span>
+                <span>{feature}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <ExampleChat
+              label="Example — household Q&A"
+              messages={[
+                { role: "user", text: "When's the water heater warranty up?" },
+                {
+                  role: "assistant",
+                  text: "Installed 3/12/24, Rheem's 6-year warranty — covered through March 2030. Pulled that from the receipt you uploaded in March.",
+                },
+              ]}
+            />
+            <ExampleChat
+              label="Example — filing a document"
+              messages={[
+                { role: "user", text: "📎 hoa-renewal-2026.pdf" },
+                {
+                  role: "upload",
+                  text: "Filed under **Home Docs** (HOA, dues)\nAnnual HOA renewal — $340 due Nov 1, 2026.",
+                },
+              ]}
+            />
+          </div>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col gap-3 w-full max-w-xs mx-auto md:mx-0 md:sticky md:top-16 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-5"
         >
-          {isBusy ? "Logging in…" : "Log in"}
-        </button>
-      </form>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50 mb-1">Log in</h2>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Username"
+            autoComplete="username"
+            className="rounded-lg px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            autoComplete="current-password"
+            className="rounded-lg px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 outline-none"
+          />
+          {error && <p className="text-red-600 dark:text-red-400 text-sm">{error}</p>}
+          <button
+            type="submit"
+            disabled={isBusy || !username || !password}
+            className="rounded-lg px-5 py-2 bg-zinc-900 text-white dark:bg-zinc-50 dark:text-black font-medium disabled:opacity-40"
+          >
+            {isBusy ? "Logging in…" : "Log in"}
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
