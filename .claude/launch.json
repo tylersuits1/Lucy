@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "lucy-backend",
+      "runtimeExecutable": "backend/run_dev.sh",
+      "runtimeArgs": [],
+      "port": 8000
+    },
+    {
+      "name": "lucy-frontend",
+      "runtimeExecutable": "frontend/run_dev.sh",
+      "runtimeArgs": [],
+      "port": 3000
+    }
+  ]
+}

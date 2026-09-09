@@ -1,6 +1,7 @@
 .env
 secrets/
 backend/data/chroma/
+backend/data/*.db
 backend/venv/
 backend/.venv/
 __pycache__/

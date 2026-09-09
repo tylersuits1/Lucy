@@ -1,4 +1,5 @@
 """Chunking and Chroma collection access for Lucy's note embeddings."""
+import re
 from functools import lru_cache
 
 import chromadb
@@ -12,6 +13,17 @@ EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 # ~0.75 words per token in English, so 300-500 tokens is roughly this many words.
 CHUNK_SIZE_WORDS = 350
 CHUNK_OVERLAP_WORDS = 50
+
+# xxx-xx-xxxx, or 9 bare digits not adjacent to other digits/letters (so it
+# doesn't clip into a longer account/tracking number).
+SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b|\b\d{9}\b")
+
+
+def redact_ssns(text: str) -> str:
+    """Strip anything SSN-shaped before it's chunked and embedded, so a breach of the
+    vector store alone can't leak one — this runs ahead of chunk_text for every
+    ingestion path (upload, bulk import, manual notes)."""
+    return SSN_PATTERN.sub("[REDACTED-SSN]", text)
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE_WORDS, overlap: int = CHUNK_OVERLAP_WORDS) -> list[str]:
@@ -40,7 +52,7 @@ def get_collection() -> chromadb.Collection:
 
 def add_document(path: str, text: str) -> int:
     """Chunk, embed, and store a document's text in Chroma, keyed by its path. Returns the chunk count."""
-    chunks = chunk_text(text)
+    chunks = chunk_text(redact_ssns(text))
     if not chunks:
         return 0
 
